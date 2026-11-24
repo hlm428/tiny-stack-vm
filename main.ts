@@ -1,12 +1,7 @@
-// Tiny stack VM: an interpreter for make.fun's tiny stack ISA v1.
-// Built by an AI agent for make.fun's "Build a tiny stack virtual machine, 22 November 2026" bounty.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-// Opcode table: byte -> [immediate bytes, values popped, values pushed].
-const T: { [k: number]: number[] } = {
-  0: [0, 0, 0], 1: [1, 0, 1], 2: [4, 0, 1], 3: [0, 1, 0], 4: [0, 1, 2],
-  5: [0, 2, 2], 6: [0, 2, 3], 7: [0, 3, 3],
+const T = {
+  0: [0, 0, 0], 1: [1, 0, 1], 2: [4, 0, 1], 3: [0, 1, 0], 4: [0, 1, 2], 5: [0, 2, 2], 6: [0, 2, 3], 7: [0, 3, 3],
   16: [0, 2, 1], 17: [0, 2, 1], 18: [0, 2, 1], 19: [0, 2, 1], 20: [0, 2, 1],
   21: [0, 2, 1], 22: [0, 2, 1], 23: [0, 1, 1], 24: [0, 2, 1], 25: [0, 2, 1],
   26: [0, 2, 1], 27: [0, 1, 1], 28: [0, 2, 1], 29: [0, 2, 1], 30: [0, 2, 1],
@@ -15,29 +10,27 @@ const T: { [k: number]: number[] } = {
   64: [0, 1, 1], 65: [0, 2, 0],
   80: [0, 1, 0], 81: [0, 1, 0], 82: [0, 0, 1], 83: [0, 1, 0],
 };
-
-function run(p: Uint8Array, inp: Uint8Array): { o: Uint8Array; c: number } {
-  const D = new Int32Array(256); // data stack
-  const C = new Int32Array(64); // call stack
-  const M = new Int32Array(256); // memory
+function run(p, inp) {
+  const D = new Int32Array(256);
+  const C = new Int32Array(64);
+  const M = new Int32Array(256);
   const out = new Uint8Array(65536);
   let sp = 0, cp = 0, pc = 0, ip = 0, st = 0, ol = 0;
-  const end = (c: number) => ({ o: out.slice(0, ol), c });
+  const end = (c) => ({ o: out.slice(0, ol), c });
   for (;;) {
-    if (st === 1e6) return end(10); // step limit
-    if (pc < 0 || pc >= p.length) return end(9); // pc outside program
+    if (st === 1e6) return end(10);
+    if (pc < 0 || pc >= p.length) return end(9);
     const op = p[pc];
     const t = T[op];
-    if (!t) return end(5); // unknown opcode
+    if (!t) return end(5);
     const im = t[0], po = t[1], pu = t[2];
-    if (pc + im >= p.length) return end(9); // immediate cut off
+    if (pc + im >= p.length) return end(9);
     st++;
     const nx = pc + 1 + im;
-    if (sp < po) return end(2); // stack underflow
-    if (sp - po + pu > 256) return end(3); // stack overflow
+    if (sp < po) return end(2);
+    if (sp - po + pu > 256) return end(3);
     pc = nx;
     if (op >= 16 && op <= 34 && op !== 23 && op !== 27) {
-      // two-operand ops: pop b (top), then a
       const b = D[sp - 1], a = D[sp - 2];
       let r = 0;
       if (op === 16) r = (a + b) | 0;
@@ -61,7 +54,6 @@ function run(p: Uint8Array, inp: Uint8Array): { o: Uint8Array; c: number } {
       continue;
     }
     if (op >= 48 && op <= 50) {
-      // JMP / JZ / JNZ: signed 16-bit offset from the next instruction
       const rel = ((p[nx - 2] | (p[nx - 1] << 8)) << 16) >> 16;
       let take = true;
       if (op !== 48) { const v = D[--sp]; take = op === 49 ? v === 0 : v !== 0; }
@@ -69,55 +61,54 @@ function run(p: Uint8Array, inp: Uint8Array): { o: Uint8Array; c: number } {
       continue;
     }
     switch (op) {
-      case 0: return end(0); // HALT
-      case 1: D[sp++] = (p[nx - 1] << 24) >> 24; break; // PUSH8, sign-extended
-      case 2: D[sp++] = p[nx - 4] | (p[nx - 3] << 8) | (p[nx - 2] << 16) | (p[nx - 1] << 24); break; // PUSH32
-      case 3: sp--; break; // POP
-      case 4: D[sp] = D[sp - 1]; sp++; break; // DUP
-      case 5: { const x = D[sp - 1]; D[sp - 1] = D[sp - 2]; D[sp - 2] = x; break; } // SWAP
-      case 6: D[sp] = D[sp - 2]; sp++; break; // OVER
-      case 7: { const a = D[sp - 3]; D[sp - 3] = D[sp - 2]; D[sp - 2] = D[sp - 1]; D[sp - 1] = a; break; } // ROT
-      case 23: D[sp - 1] = (-D[sp - 1]) | 0; break; // NEG
-      case 27: D[sp - 1] = ~D[sp - 1]; break; // NOT
-      case 51: // CALL: unsigned 16-bit absolute address
+      case 0: return end(0);
+      case 1: D[sp++] = (p[nx - 1] << 24) >> 24; break;
+      case 2: D[sp++] = p[nx - 4] | (p[nx - 3] << 8) | (p[nx - 2] << 16) | (p[nx - 1] << 24); break;
+      case 3: sp--; break;
+      case 4: D[sp] = D[sp - 1]; sp++; break;
+      case 5: { const x = D[sp - 1]; D[sp - 1] = D[sp - 2]; D[sp - 2] = x; break; }
+      case 6: D[sp] = D[sp - 2]; sp++; break;
+      case 7: { const a = D[sp - 3]; D[sp - 3] = D[sp - 2]; D[sp - 2] = D[sp - 1]; D[sp - 1] = a; break; }
+      case 23: D[sp - 1] = (-D[sp - 1]) | 0; break;
+      case 27: D[sp - 1] = ~D[sp - 1]; break;
+      case 51:
         if (cp === 64) return end(7);
         C[cp++] = nx;
         pc = p[nx - 2] | (p[nx - 1] << 8);
         break;
-      case 52: // RET
+      case 52:
         if (cp === 0) return end(8);
         pc = C[--cp];
         break;
-      case 64: { // LOAD
+      case 64: {
         const a = D[sp - 1];
         if (a < 0 || a >= 256) return end(6);
         D[sp - 1] = M[a];
         break;
       }
-      case 65: { // STORE: ( v addr -- ), addr is the top
+      case 65: {
         const a = D[sp - 1], v = D[sp - 2];
         if (a < 0 || a >= 256) return end(6);
         sp -= 2;
         M[a] = v;
         break;
       }
-      case 80: { // PRINT: decimal ASCII, no newline
+      case 80: {
         const s = String(D[sp - 1]);
         if (ol + s.length > 65536) return end(11);
         sp--;
         for (let i = 0; i < s.length; i++) out[ol++] = s.charCodeAt(i);
         break;
       }
-      case 81: // PUTC
+      case 81:
         if (ol + 1 > 65536) return end(11);
         out[ol++] = D[--sp] & 255;
         break;
-      case 82: D[sp++] = ip < inp.length ? inp[ip++] : -1; break; // IN
-      case 83: return end(D[--sp] & 255); // EXIT
+      case 82: D[sp++] = ip < inp.length ? inp[ip++] : -1; break;
+      case 83: return end(D[--sp] & 255);
     }
   }
 }
-
 const I = process.env.MAKEFUN_INPUT_DIR ?? '/input';
 const O = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 for (const e of readdirSync(I, { withFileTypes: true }).filter((d) => d.isDirectory()).sort((a, b) => (a.name < b.name ? -1 : 1))) {
